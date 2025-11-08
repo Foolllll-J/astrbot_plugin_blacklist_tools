@@ -106,7 +106,7 @@ class MyPlugin(Star):
         except Exception as e:
             logger.error(f"检查黑名单时出错：{e}")
 
-    @filter.command_group("blacklist", alias=["black", "bl"])
+    @filter.command_group("blacklist", alias={"black", "bl"})
     def blacklist():
         pass
 
@@ -263,20 +263,20 @@ class MyPlugin(Star):
             logger.error(f"查看用户 {user_id} 黑名单信息时出错：{e}")
             yield event.plain_result("查看用户黑名单信息时出错。")
 
-    @filter.llm_tool(name="block_user")
-    async def add_to_block_user(
-        self, event: AstrMessageEvent, duration: int = 0, reason: str = ""
-    ) -> MessageEventResult:
+    @filter.llm_tool(name="add_to_blacklist")
+    async def add_to_blacklist(
+        self, event: AstrMessageEvent, user_id: str, duration: int = 0, reason: str = ""
+    ) -> str:
         """
-        Block a user. All messages from this user will be ignored immediately.
-        Use this function when you decide to blacklist a user and cease all contact.
+        将用户添加到黑名单。
+        当您决定将用户加入黑名单并停止所有联系时，请使用此功能。
 
         Args:
-            duration (number): The block duration in seconds. Use 0 to make it permanent.
-            reason (string): The reason for blocking this user.
+            user_id (string): 要添加到黑名单的用户ID
+            duration (number): 黑名单时长（秒），设为0表示永久拉黑
+            reason (string): 拉黑原因
         """
         try:
-            user_id = event.get_sender_id()
             ban_time = datetime.now().isoformat()
             expire_time = None
             actual_duration = duration
@@ -304,3 +304,27 @@ class MyPlugin(Star):
         except Exception as e:
             logger.error(f"添加用户 {user_id} 到黑名单时出错：{e}")
             return "添加用户到黑名单时出错"
+
+    @filter.llm_tool(name="remove_from_blacklist")
+    async def remove_from_blacklist(
+        self, event: AstrMessageEvent, user_id: str
+    ) -> str:
+        """
+        从黑名单移除用户。
+
+        Args:
+            user_id (string): 要从黑名单移除的用户ID
+        """
+        try:
+            user = await self.db.get_user_info(user_id)
+
+            if not user:
+                return f"用户 {user_id} 不在黑名单中。"
+
+            if await self.db.remove_user(user_id):
+                return f"用户 {user_id} 已从黑名单中移除。"
+            else:
+                return "从黑名单移除用户时出错。"
+        except Exception as e:
+            logger.error(f"从黑名单移除用户 {user_id} 时出错：{e}")
+            return "从黑名单移除用户时出错。"

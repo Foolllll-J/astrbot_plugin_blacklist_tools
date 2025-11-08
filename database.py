@@ -1,12 +1,13 @@
 import aiosqlite
 from datetime import datetime, timedelta
 from astrbot.api import logger
+from typing import Optional
 
 
 class BlacklistDatabase:
     def __init__(self, db_path: str, auto_delete_expired_after: int = -1):
         self.db_path = db_path
-        self._db = None
+        self._db: Optional[aiosqlite.Connection] = None
         self.auto_delete_expired_after = auto_delete_expired_after
 
     async def initialize(self):
@@ -100,7 +101,11 @@ class BlacklistDatabase:
             return None
 
     async def add_user(
-        self, user_id: str, ban_time: str, expire_time: str = None, reason: str = ""
+        self,
+        user_id: str,
+        ban_time: str,
+        expire_time: Optional[str] = None,
+        reason: str = "",
     ):
         """添加用户到黑名单"""
         try:
