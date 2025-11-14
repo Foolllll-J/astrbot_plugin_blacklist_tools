@@ -278,10 +278,12 @@ class MyPlugin(Star):
             reason (string): 拉黑原因
         """
         try:
-            # 检查用户是否已在黑名单中
-            existing_user = await self.db.get_user_info(user_id)
-            if existing_user:
-                return f"用户 {user_id} 已在黑名单中，无需重复添加。操作已完成。"
+            # 检查用户是否已在黑名单中（这会自动清理过期记录）
+            if await self.db.is_user_blacklisted(user_id):
+                response = f"用户 {user_id} 已在黑名单中，无需重复添加。操作已完成。"
+                # 直接发送消息给用户，提供即时反馈
+                await event.send(MessageChain().message(response))
+                return response
 
             ban_time = datetime.now().isoformat()
             expire_time = None
@@ -303,13 +305,20 @@ class MyPlugin(Star):
             await self.db.add_user(user_id, ban_time, expire_time, reason)
 
             if actual_duration > 0:
-                return f"✅ 已成功添加用户 {user_id} 到黑名单，时长 {actual_duration} 秒。操作已完成，无需进一步操作。"
+                response = f"✅ 已成功添加用户 {user_id} 到黑名单，时长 {actual_duration} 秒。操作已完成，无需进一步操作。"
             else:
-                return f"✅ 已成功添加用户 {user_id} 到永久黑名单。操作已完成，无需进一步操作。"
+                response = f"✅ 已成功添加用户 {user_id} 到永久黑名单。操作已完成，无需进一步操作。"
+
+            # 直接发送消息给用户，提供即时反馈
+            await event.send(MessageChain().message(response))
+            return response
 
         except Exception as e:
             logger.error(f"添加用户 {user_id} 到黑名单时出错：{e}")
-            return f"❌ 添加用户到黑名单时出错：{e}"
+            response = f"❌ 添加用户到黑名单时出错：{e}"
+            # 直接发送消息给用户，提供即时反馈
+            await event.send(MessageChain().message(response))
+            return response
 
     @filter.llm_tool(name="remove_from_blacklist")
     async def remove_from_blacklist(
@@ -327,12 +336,24 @@ class MyPlugin(Star):
             user = await self.db.get_user_info(user_id)
 
             if not user:
-                return f"用户 {user_id} 不在黑名单中。操作已完成。"
+                response = f"用户 {user_id} 不在黑名单中。操作已完成。"
+                # 直接发送消息给用户，提供即时反馈
+                await event.send(MessageChain().message(response))
+                return response
 
             if await self.db.remove_user(user_id):
-                return f"✅ 用户 {user_id} 已从黑名单中移除。操作已完成，无需进一步操作。"
+                response = f"✅ 用户 {user_id} 已从黑名单中移除。操作已完成，无需进一步操作。"
+                # 直接发送消息给用户，提供即时反馈
+                await event.send(MessageChain().message(response))
+                return response
             else:
-                return "❌ 从黑名单移除用户时出错。"
+                response = "❌ 从黑名单移除用户时出错。"
+                # 直接发送消息给用户，提供即时反馈
+                await event.send(MessageChain().message(response))
+                return response
         except Exception as e:
             logger.error(f"从黑名单移除用户 {user_id} 时出错：{e}")
-            return f"❌ 从黑名单移除用户时出错：{e}"
+            response = f"❌ 从黑名单移除用户时出错：{e}"
+            # 直接发送消息给用户，提供即时反馈
+            await event.send(MessageChain().message(response))
+            return response

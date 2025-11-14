@@ -49,12 +49,9 @@ class BlacklistDatabase:
                     expire_datetime = datetime.fromisoformat(expire_time)
                     now = datetime.now()
                     if now > expire_datetime:
-                        if not self.auto_delete_expired_after == -1:
-                            delete_time = expire_datetime + timedelta(
-                                seconds=self.auto_delete_expired_after
-                            )
-                            if now > delete_time:
-                                await self.remove_user(user_id)
+                        # 黑名单已过期，立即删除记录以允许重新拉黑
+                        logger.info(f"用户 {user_id} 的黑名单已过期，正在移除记录")
+                        await self.remove_user(user_id)
                         return False
                     else:
                         logger.info(f"用户 {user_id} 在黑名单中，消息已被阻止")
