@@ -268,14 +268,16 @@ class MyPlugin(Star):
         self, event: AstrMessageEvent, user_id: str, duration: int = 0, reason: str = ""
     ) -> str:
         """
-        将用户添加到黑名单。
-        ⚠️ 重要提醒：此操作是最终性的，执行后用户将被立即拉黑，无需任何后续确认或重复调用。
-        当您确定要将用户加入黑名单时，调用此工具一次即可完成整个流程。
+        立即拉黑用户。
+        
+        调用此工具需要传入用户ID (user_id)、拉黑时长 (duration，单位秒) 和原因 (reason)。
+        注意：duration 必须是相对秒数（如 3600 代表1小时），填入 0 为永久。
+        ⚠️ 此操作是最终性的，执行后立即生效。
 
         Args:
-            user_id (string): 要添加到黑名单的用户ID
-            duration (number): 黑名单时长（秒），设为0表示永久拉黑
-            reason (string): 拉黑原因
+            user_id (string): 用户的唯一标识。
+            duration (number): 相对现在的拉黑秒数。
+            reason (string): 拉黑的具体原因。
         """
         try:
             # 检查用户是否已在黑名单中（这会自动清理过期记录）
