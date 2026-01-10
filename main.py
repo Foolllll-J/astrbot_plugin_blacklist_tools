@@ -326,6 +326,7 @@ class MyPlugin(Star):
                 ).isoformat()
 
             await self.db.add_user(target_id, ban_time, expire_time, reason)
+            logger.info(f"用户 {target_id} 已由 {sender_id} 通过 LLM 工具拉黑。时长: {actual_duration if actual_duration > 0 else '永久'}, 原因: {reason}")
             
             return json.dumps({
                 "success": True,
@@ -374,6 +375,7 @@ class MyPlugin(Star):
                 }, ensure_ascii=False)
 
             if await self.db.remove_user(user_id):
+                logger.info(f"用户 {user_id} 已由 {sender_id} 通过 LLM 工具解除拉黑。")
                 return json.dumps({
                     "success": True,
                     "message": f"用户 {user_id} 已解除拉黑。",
