@@ -174,12 +174,12 @@ class MyPlugin(Star):
                 return
 
             if await self.db.remove_user(user_id):
-                yield event.plain_result(f"用户 {user_id} 已从黑名单中移除。")
+                yield event.plain_result(f"用户 {user_id} 已解除拉黑。")
             else:
-                yield event.plain_result("从黑名单移除用户时出错。")
+                yield event.plain_result("解除拉黑用户时出错。")
         except Exception as e:
-            logger.error(f"从黑名单移除用户 {user_id} 时出错：{e}")
-            yield event.plain_result("从黑名单移除用户时出错。")
+            logger.error(f"解除拉黑用户 {user_id} 时出错：{e}")
+            yield event.plain_result("解除拉黑用户时出错。")
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @blacklist.command("add")
@@ -273,7 +273,33 @@ class MyPlugin(Star):
             duration (number): 拉黑时长（秒）。0 表示永久拉黑。默认为 0。
             reason (string): 拉黑原因。
         """
+        target_id = user_id if user_id else event.get_sender_id()
         try:
+            # 权限检查
+            sender_id = event.get_sender_id()
+            self_id = event.get_self_id()
+            is_admin = event.is_admin()
+            
+            # 权限逻辑：
+            # 1. 如果是拉黑自己（当前消息发送者），允许（Bot 自卫/用户自首）
+            # 2. 如果是管理员在操作，允许
+            # 3. 如果是 Bot 自身发起的决策（针对当前对话者），允许
+            # 4. 只有在“非管理员”尝试拉黑“其他人”时，才拒绝
+            is_self_defense = (target_id == sender_id)
+            
+            if not is_admin and not is_self_defense and sender_id != self_id:
+                 return json.dumps({
+                    "success": False,
+                    "message": f"权限不足。您({sender_id})没有权限拉黑其他用户({target_id})。"
+                }, ensure_ascii=False)
+            
+            # 安全检查：不允许拉黑管理员（除非配置允许）
+            if target_id == sender_id and is_admin and not self.allow_blacklist_admin:
+                return json.dumps({
+                    "success": False,
+                    "message": "不能拉黑管理员。"
+                }, ensure_ascii=False)
+
             # 检查用户是否已在黑名单中（这会自动清理过期记录）
             if await self.db.is_user_blacklisted(target_id):
                 return json.dumps({
@@ -335,7 +361,7 @@ class MyPlugin(Star):
             if not is_admin and sender_id != self_id:
                 return json.dumps({
                     "success": False,
-                    "message": "权限不足。只有管理员可以移除黑名单。"
+                    "message": "权限不足。只有管理员可以解除拉黑。"
                 }, ensure_ascii=False)
 
             user = await self.db.get_user_info(user_id)
