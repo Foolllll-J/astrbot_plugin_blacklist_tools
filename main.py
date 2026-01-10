@@ -1,3 +1,4 @@
+import json
 from os import path
 import sys
 from datetime import datetime, timedelta
@@ -259,29 +260,27 @@ class MyPlugin(Star):
             logger.error(f"查看用户 {user_id} 黑名单信息时出错：{e}")
             yield event.plain_result("查看用户黑名单信息时出错。")
 
-    @filter.llm_tool(name="add_to_blacklist")
-    async def add_to_blacklist(
-        self, event: AstrMessageEvent, user_id: str, duration: int = 0, reason: str = ""
+    @filter.llm_tool(name="block_user")
+    async def block_user(
+        self, event: AstrMessageEvent, user_id: str = None, duration: int = 0, reason: str = ""
     ) -> str:
         """
-        立即拉黑用户。
+        将指定用户加入黑名单。加入后，该用户的所有消息将被忽略。
+        如果未提供 user_id，则默认拉黑当前发送者。
         
-        调用此工具需要传入用户ID (user_id)、拉黑时长 (duration，单位秒) 和原因 (reason)。
-        注意：duration 必须是相对秒数（如 3600 代表1小时），填入 0 为永久。
-        ⚠️ 此操作是最终性的，执行后立即生效。
-
         Args:
-            user_id (string): 用户的唯一标识。
-            duration (number): 相对现在的拉黑秒数。
-            reason (string): 拉黑的具体原因。
+            user_id (string): 要拉黑的用户 ID。可选，默认为当前发送者。
+            duration (number): 拉黑时长（秒）。0 表示永久拉黑。默认为 0。
+            reason (string): 拉黑原因。
         """
         try:
             # 检查用户是否已在黑名单中（这会自动清理过期记录）
-            if await self.db.is_user_blacklisted(user_id):
-                response = f"用户 {user_id} 已在黑名单中，无需重复添加。操作已完成。"
-                # 直接发送消息给用户，提供即时反馈
-                await event.send(MessageChain().message(response))
-                return response
+            if await self.db.is_user_blacklisted(target_id):
+                return json.dumps({
+                    "success": True,
+                    "message": f"用户 {target_id} 已在黑名单中，无需重复添加。",
+                    "user_id": target_id
+                }, ensure_ascii=False)
 
             ban_time = datetime.now().isoformat()
             expire_time = None
@@ -300,71 +299,79 @@ class MyPlugin(Star):
                     datetime.now() + timedelta(seconds=actual_duration)
                 ).isoformat()
 
-            await self.db.add_user(user_id, ban_time, expire_time, reason)
-
-            if actual_duration > 0:
-                response = f"✅ 已成功添加用户 {user_id} 到黑名单，时长 {actual_duration} 秒。操作已完成，无需进一步操作。"
-            else:
-                response = f"✅ 已成功添加用户 {user_id} 到永久黑名单。操作已完成，无需进一步操作。"
-
-            # 直接发送消息给用户，提供即时反馈
-            await event.send(MessageChain().message(response))
-            return response
+            await self.db.add_user(target_id, ban_time, expire_time, reason)
+            
+            return json.dumps({
+                "success": True,
+                "message": f"用户 {target_id} 已拉黑。",
+                "user_id": target_id,
+                "duration": actual_duration if actual_duration > 0 else "永久",
+                "reason": reason
+            }, ensure_ascii=False)
 
         except Exception as e:
-            logger.error(f"添加用户 {user_id} 到黑名单时出错：{e}")
-            response = f"❌ 添加用户到黑名单时出错：{e}"
-            # 直接发送消息给用户，提供即时反馈
-            await event.send(MessageChain().message(response))
-            return response
+            logger.error(f"添加用户 {target_id} 到黑名单时出错：{e}")
+            return json.dumps({
+                "success": False,
+                "message": f"操作失败：{str(e)}"
+            }, ensure_ascii=False)
 
-    @filter.llm_tool(name="remove_from_blacklist")
-    async def remove_from_blacklist(
+    @filter.llm_tool(name="unblock_user")
+    async def unblock_user(
         self, event: AstrMessageEvent, user_id: str
     ) -> str:
         """
         从黑名单移除用户。
-        ⚠️ 重要提醒：此操作是最终性的，执行后用户将被立即从黑名单移除，无需任何后续确认或重复调用。
-        当您确定要将用户从黑名单移除时，调用此工具一次即可完成整个流程。
-
+        
         Args:
             user_id (string): 要从黑名单移除的用户ID
         """
         try:
+            sender_id = event.get_sender_id()
+            self_id = event.get_self_id()
+            is_admin = event.is_admin()
+            
+            # 解封逻辑：必须是管理员，或者 Bot 自身决策
+            if not is_admin and sender_id != self_id:
+                return json.dumps({
+                    "success": False,
+                    "message": "权限不足。只有管理员可以移除黑名单。"
+                }, ensure_ascii=False)
+
             user = await self.db.get_user_info(user_id)
 
             if not user:
-                response = f"用户 {user_id} 不在黑名单中。操作已完成。"
-                # 直接发送消息给用户，提供即时反馈
-                await event.send(MessageChain().message(response))
-                return response
+                return json.dumps({
+                    "success": True,
+                    "message": f"用户 {user_id} 不在黑名单中。",
+                    "user_id": user_id
+                }, ensure_ascii=False)
 
             if await self.db.remove_user(user_id):
-                response = f"✅ 用户 {user_id} 已从黑名单中移除。操作已完成，无需进一步操作。"
-                # 直接发送消息给用户，提供即时反馈
-                await event.send(MessageChain().message(response))
-                return response
+                return json.dumps({
+                    "success": True,
+                    "message": f"用户 {user_id} 已解除拉黑。",
+                    "user_id": user_id
+                }, ensure_ascii=False)
             else:
-                response = "❌ 从黑名单移除用户时出错。"
-                # 直接发送消息给用户，提供即时反馈
-                await event.send(MessageChain().message(response))
-                return response
+                return json.dumps({
+                    "success": False,
+                    "message": "解除拉黑用户时失败。"
+                }, ensure_ascii=False)
         except Exception as e:
             logger.error(f"从黑名单移除用户 {user_id} 时出错：{e}")
-            response = f"❌ 从黑名单移除用户时出错：{e}"
-            # 直接发送消息给用户，提供即时反馈
-            await event.send(MessageChain().message(response))
-            return response
+            return json.dumps({
+                "success": False,
+                "message": f"操作失败：{str(e)}"
+            }, ensure_ascii=False)
 
     @filter.llm_tool(name="list_blacklist")
     async def list_blacklist(
         self, event: AstrMessageEvent, page: int = 1, page_size: int = 10
     ) -> str:
         """
-        查看当前黑名单列表。
-        显示黑名单中所有用户的详细信息，包括用户ID、加入时间、过期时间和拉黑原因。
-        支持分页显示，默认显示第1页，每页10条记录。
-
+        获取当前黑名单列表。
+        
         Args:
             page (number): 页码，从1开始，默认为1
             page_size (number): 每页显示的数量，默认为10
@@ -373,40 +380,67 @@ class MyPlugin(Star):
             total_count = await self.db.get_blacklist_count()
 
             if total_count == 0:
-                return "黑名单为空。"
+                return json.dumps({
+                    "total_count": 0,
+                    "users": []
+                }, ensure_ascii=False)
 
-            # 计算分页参数
             total_pages = (total_count + page_size - 1) // page_size
-            if page < 1:
-                page = 1
-            elif page > total_pages:
-                page = total_pages
+            if page < 1: page = 1
+            elif page > total_pages: page = total_pages
 
-            users = await self.db.get_blacklist_users(page, page_size)
-
-            result = "黑名单列表\n"
-            result += "=" * 60 + "\n\n"
-
-            result += f"{'ID':<20} {'加入时间':<20} {'过期时间':<20} {'原因':<20}\n"
-            result += "-" * 80 + "\n"
-
-            for user in users:
-                user_id, ban_time, expire_time, reason = user
-                ban_time_str = self._format_datetime(ban_time, check_expire=False)
-                expire_time_str = self._format_datetime(expire_time, check_expire=True)
-                reason_str = reason if reason else "无"
-                result += f"{user_id:<20} {ban_time_str:<20} {expire_time_str:<20} {reason_str:<20}\n"
-
-            result += "-" * 80 + "\n"
-            result += f"第 {page}/{total_pages} 页，共 {total_count} 条记录\n"
-            result += f"每页显示 {page_size} 条记录\n"
-
-            if page > 1:
-                result += f"使用 list_blacklist 工具查看上一页：page={page - 1}, page_size={page_size}\n"
-            if page < total_pages:
-                result += f"使用 list_blacklist 工具查看下一页：page={page + 1}, page_size={page_size}\n"
+            users_data = await self.db.get_blacklist_users(page, page_size)
             
-            return result
+            users = []
+            for user in users_data:
+                user_id, ban_time, expire_time, reason = user
+                users.append({
+                    "user_id": user_id,
+                    "ban_time": ban_time,
+                    "expire_time": expire_time if expire_time else "永久",
+                    "reason": reason if reason else "无"
+                })
+
+            return json.dumps({
+                "total_count": total_count,
+                "total_pages": total_pages,
+                "current_page": page,
+                "page_size": page_size,
+                "users": users
+            }, ensure_ascii=False)
         except Exception as e:
             logger.error(f"列出黑名单时出错：{e}")
-            return f"列出黑名单时出错：{e}"
+            return json.dumps({
+                "error": f"查询失败：{str(e)}"
+            }, ensure_ascii=False)
+
+    @filter.llm_tool(name="get_blacklist_status")
+    async def get_blacklist_status(self, event: AstrMessageEvent, user_id: str = None) -> str:
+        """
+        查询特定用户的黑名单状态。
+        
+        Args:
+            user_id (string): 要查询的用户 ID。可选，默认为当前发送者。
+        """
+        target_id = user_id if user_id else event.get_sender_id()
+        try:
+            user_info = await self.db.get_user_info(target_id)
+            if user_info:
+                user_id, ban_time, expire_time, reason = user_info
+                return json.dumps({
+                    "is_blacklisted": True,
+                    "user_id": user_id,
+                    "ban_time": ban_time,
+                    "expire_time": expire_time if expire_time else "永久",
+                    "reason": reason if reason else "无"
+                }, ensure_ascii=False)
+            else:
+                return json.dumps({
+                    "is_blacklisted": False,
+                    "user_id": target_id
+                }, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"查询用户 {target_id} 黑名单状态时出错：{e}")
+            return json.dumps({
+                "error": f"查询失败：{str(e)}"
+            }, ensure_ascii=False)
