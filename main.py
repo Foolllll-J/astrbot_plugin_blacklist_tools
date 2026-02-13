@@ -269,9 +269,9 @@ class MyPlugin(Star):
         如果未提供 user_id，则默认拉黑当前发送者。
         
         Args:
-            user_id (string): 要拉黑的用户 ID。可选，默认为当前发送者。
-            duration (number): 拉黑时长（秒）。0 表示永久拉黑。默认为 0。
-            reason (string): 拉黑原因。
+            user_id (string): 要拉黑的用户 ID。可选，默认为当前对话者。
+            duration (number): 拉黑时长（秒）。请根据违规程度选择：1-10分钟(60-600)用于轻微骚扰；1小时(3600)用于持续刷屏；24小时(86400)用于严重冒犯；0表示永久拉黑。
+            reason (string): 拉黑原因，将记录在案并可能作为最终回复的参考。
         """
         target_id = user_id if user_id else event.get_sender_id()
         try:
@@ -333,7 +333,8 @@ class MyPlugin(Star):
                 "message": f"用户 {target_id} 已拉黑。",
                 "user_id": target_id,
                 "duration": actual_duration if actual_duration > 0 else "永久",
-                "reason": reason
+                "reason": reason,
+                "hint": "操作已生效，对方消息已被屏蔽。你可以向对方发出最后的警告或告别，然后停止对话。" if is_self_defense else "操作已生效。"
             }, ensure_ascii=False)
 
         except Exception as e:
